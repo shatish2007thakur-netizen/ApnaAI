@@ -160,7 +160,7 @@ def process_command(command):
                 strl.session_state.tts_text = reply
             except Exception as e:
                 if "429" in str(e):
-                    reply = "Sir, request rate limit reached. Please wait 5 seconds before your next command."
+                    reply = "Sir, request rate limit reached. Please wait 5 seconds after your next command."
                 else:
                     reply = f"Sir, I faced an error connecting to the AI core. Details: {str(e)[:30]}"
                 strl.session_state.chat_history += f"\n\nJarvis: {reply}"
