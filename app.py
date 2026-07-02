@@ -39,6 +39,10 @@ strl.markdown("""
         margin-bottom: 20px;
         white-space: pre-wrap;
     }
+    /* Hidden element hack for JS communication */
+    div[data-testid="stTextInput"] {
+        color: white;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -51,7 +55,6 @@ if "GEMINI_API_KEY" in strl.secrets:
 else:
     api_key = None
 
-# Yeh decorator lagane se Streamlit baar-baar Google par request nahi bhejega
 @strl.cache_resource
 def get_ai_client(key):
     if key:
@@ -63,87 +66,23 @@ def get_ai_client(key):
 
 ai_client = get_ai_client(api_key)
 
-# Initialize Session States for Logs and Responses
+# Initialize Session States
 if "chat_history" not in strl.session_state:
     strl.session_state.chat_history = "Jarvis: Systems online. Jarvis AI initialized.\nJarvis: Ready for your command, Sir."
 if "tts_text" not in strl.session_state:
     strl.session_state.tts_text = "Systems initialized with Gemini AI. I am online, Sir."
-
-# ================= JAVASCRIPT FOR SPEECH & TTS =================
-# Fixed JS with robust SpeechRecognition triggering
-js_code = f"""
-<script>
-    // --- TEXT TO SPEECH (Jarvis Voice) ---
-    function speak(text) {{
-        if ('speechSynthesis' in window && text !== "") {{
-            window.speechSynthesis.cancel(); 
-            var msg = new SpeechSynthesisUtterance(text);
-            var voices = window.speechSynthesis.getVoices();
-            if(voices.length > 0) {{
-                msg.voice = voices[0]; 
-            }}
-            msg.rate = 1.0;
-            window.speechSynthesis.speak(msg);
-        }}
-    }}
-
-    var current_tts = `{strl.session_state.tts_text}`;
-    if (current_tts !== "") {{
-        speak(current_tts);
-    }}
-
-    function startListening() {{
-        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {{
-            alert("Your browser does not support Speech Recognition. Please use Chrome.");
-            return;
-        }}
-        
-        var recognition = new SpeechRecognition();
-        recognition.lang = 'en-IN';
-        recognition.interimResults = false;
-
-        recognition.start();
-
-        recognition.onresult = function(event) {{
-            var speechToText = event.results[0][0].transcript;
-            // Inject text safely using modern window messaging
-            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: speechToText}}, '*');
-            
-            // Fallback fallback selector injection
-            const doc = window.parent.document;
-            const textFields = doc.querySelectorAll('textarea[aria-label="voice_input_receiver"]');
-            if(textFields.length > 0) {{
-                textFields[0].value = speechToText;
-                textFields[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
-            }}
-        }};
-    }}
-</script>
-"""
-
-# Inject JavaScript
-strl.components.v1.html(js_code, height=0, width=0)
-
-st_status = strl.empty()
-st_status.markdown('<div class="terminal-status">Status: Standby. Use terminal input below or Initialize Mic</div>', unsafe_allow_html=True)
-
-# Display Terminal logs
-strl.markdown(f'<div class="chat-box">{strl.session_state.chat_history}</div>', unsafe_allow_html=True)
+if "last_processed_query" not in strl.session_state:
+    strl.session_state.last_processed_query = ""
 
 # ================= CORE PROCESSOR =================
 def process_command(command):
-    # Agar command khali hai, ya wahi purani command baar-baar aa rahi hai toh ruk jao
     if not command or command.strip() == "":
         return
         
-    # Pehle hi check karlo ki kya yeh query abhi-abhi process hui hai?
-    if strl.session_state.get("last_processed_query") == command:
+    if strl.session_state.last_processed_query == command:
         return
 
-    # Ab save karo ki hum isko process kar rahe hain taaki duplicate requests na jayein
     strl.session_state.last_processed_query = command
-        
     strl.session_state.chat_history += f"\n\nYou: {command}"
     cmd = command.lower().strip()
     
@@ -185,8 +124,6 @@ def process_command(command):
                 strl.session_state.chat_history += f"\n\nJarvis: {reply}"
                 strl.session_state.tts_text = reply
             except Exception as e:
-                print(f"Gemini API Error: {e}")
-                # Agar 429 error aaye toh user ko clear batao ki unka code sahi hai, bas server busy hai
                 if "429" in str(e):
                     reply = "Sir, Streamlit Cloud servers are currently facing high traffic with Gemini API. Please try again in a few seconds."
                 else:
@@ -194,28 +131,88 @@ def process_command(command):
                 strl.session_state.chat_history += f"\n\nJarvis: {reply}"
                 strl.session_state.tts_text = "Apologies Sir, server is busy."
 
-# ================= VOICE INPUT RECEIVER & HANDLER =================
-# JavaScript se aane wale voice response ko catch karne ke liye setup
-from streamlit_js_eval import streamlit_js_eval
+# ================= JAVASCRIPT FOR SPEECH & TTS =================
+# We integrate this smoothly directly inside the app body
+js_code = f"""
+<script>
+    function speak(text) {{
+        if ('speechSynthesis' in window && text !== "") {{
+            window.speechSynthesis.cancel(); 
+            var msg = new SpeechSynthesisUtterance(text);
+            var voices = window.speechSynthesis.getVoices();
+            if(voices.length > 0) {{
+                msg.voice = voices[0]; 
+            }}
+            msg.rate = 1.0;
+            window.speechSynthesis.speak(msg);
+        }}
+    }}
 
-# Browser ke window messaging se text data retrieve karna
-voice_query = None
+    // Trigger TTS on load
+    var current_tts = `{strl.session_state.tts_text}`;
+    if (current_tts !== "") {{
+        speak(current_tts);
+    }}
 
-# Yeh block check karega ki koi nayi voice query aayi hai ya nahi
-if voice_query and voice_query != strl.session_state.get("last_processed_query", ""):
-    st_status.markdown('<div class="terminal-status">Status: Processing Command...</div>', unsafe_allow_html=True)
-    process_command(voice_query)
-    strl.rerun()
+    function startListening() {{
+        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {{
+            alert("Your browser does not support Speech Recognition. Please use Chrome.");
+            return;
+        }}
+        
+        var recognition = new SpeechRecognition();
+        recognition.lang = 'en-IN';
+        recognition.interimResults = false;
+        recognition.start();
 
-# --- Manual Input Box & Control Action Buttons ---
+        recognition.onresult = function(event) {{
+            var speechToText = event.results[0][0].transcript;
+            
+            // Find standard Streamlit inputs via parent window securely
+            var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            if(inputs.length > 0) {{
+                inputs[0].value = speechToText;
+                inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                
+                // Simulate pressing Enter key
+                setTimeout(function() {{
+                    inputs[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    var buttons = window.parent.document.querySelectorAll('button');
+                    for (var i = 0; i < buttons.length; i++) {{
+                        if (buttons[i].textContent.includes("SEND")) {{
+                            buttons[i].click();
+                            break;
+                        }}
+                    }}
+                }}, 500);
+            }}
+        }};
+    }}
+</script>
+"""
+strl.components.v1.html(js_code, height=0, width=0)
+
+# Display Status and Logs
+st_status = strl.empty()
+st_status.markdown('<div class="terminal-status">Status: Standby. Use terminal input below or Initialize Mic</div>', unsafe_allow_html=True)
+strl.markdown(f'<div class="chat-box">{strl.session_state.chat_history}</div>', unsafe_allow_html=True)
+
+# --- Manual & Voice Combined Input Box ---
 col1, col2 = strl.columns([3, 1])
 with col1:
-    text_input = strl.text_input("Type command manually here:", key="manual_text_input", label_visibility="collapsed", placeholder="Type a command...")
+    # Is input widget ko JS direct query inject karne ke liye use karega
+    text_input = strl.text_input("Type command manually here:", key="manual_text_input", label_visibility="collapsed", placeholder="Type or speak a command...")
 with col2:
-    if strl.button("SEND ↵", use_container_width=True) and text_input:
-        process_command(text_input)
-        strl.rerun()
+    send_click = strl.button("SEND ↵", use_container_width=True)
+
+# Trigger Processor if text submitted
+if (text_input and text_input != strl.session_state.last_processed_query) or (send_click and text_input):
+    st_status.markdown('<div class="terminal-status">Status: Processing Command...</div>', unsafe_allow_html=True)
+    process_command(text_input)
+    strl.rerun()
 
 # Main Interactive Custom Mic Activation Button 
 if strl.button("🎙️ INITIALIZE MIC SYSTEMS", use_container_width=True):
-    strl.markdown('<script>startListening();</script>', unsafe_allow_html=True)
+    # This invokes the JS speech trigger built on parent window level
+    strl.components.v1.html(js_code + "<script>startListening();</script>", height=0, width=0)
