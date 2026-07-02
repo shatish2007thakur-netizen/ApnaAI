@@ -1,17 +1,17 @@
-import streamlit as st
+import streamlit as strl
 from google import genai
 import json
 import os
-import time
-from datetime import datetime
 
 # ================= STREAMLIT PAGE CONFIG =================
-st.set_page_config(page_title="JARVIS AI ONLINE SYSTEM", page_icon="🤖", layout="centered")
+strl.set_page_config(page_title="JARVIS AI ONLINE SYSTEM", page_icon="🤖", layout="centered")
 
-# Custom CSS
-st.markdown("""
+# Custom CSS for Jarvis Terminal View
+strl.markdown("""
     <style>
-    .stApp { background-color: #1a1a1a; }
+    .stApp {
+        background-color: #1a1a1a;
+    }
     .terminal-title {
         font-family: 'Courier New', Courier, monospace;
         color: #4af626;
@@ -34,294 +34,188 @@ st.markdown("""
         padding: 15px;
         font-family: 'Courier New', Courier, monospace;
         color: #4af626;
-        height: 350px;
+        height: 300px;
         overflow-y: auto;
         margin-bottom: 20px;
         white-space: pre-wrap;
     }
-    .mic-button {
-        width: 100%;
-        padding: 14px;
-        border-radius: 8px;
-        border: 2px solid #4af626;
-        background-color: #000000;
-        color: #4af626;
-        font-weight: bold;
-        cursor: pointer;
-        font-size: 18px;
-        font-family: 'Courier New', Courier, monospace;
-        transition: 0.3s;
-        margin-bottom: 10px;
-    }
-    .mic-button:hover {
-        background-color: #4af626;
-        color: #000000;
-    }
-    .mic-button.listening {
-        background-color: #4af626;
-        color: #000000;
-        animation: pulse 1s infinite;
-    }
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="terminal-title">⚡ JARVIS AI ONLINE SYSTEM</div>', unsafe_allow_html=True)
+# Title Header
+strl.markdown('<div class="terminal-title">JARVIS AI ONLINE SYSTEM</div>', unsafe_allow_html=True)
 
-# ================= GEMINI CONFIG =================
-if "GEMINI_API_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_API_KEY"]
+# ================= GEMINI CONFIGURATION =================
+if "GEMINI_API_KEY" in strl.secrets:
+    api_key = strl.secrets["GEMINI_API_KEY"]
 else:
     api_key = None
 
-@st.cache_resource
+# Yeh decorator lagane se Streamlit baar-baar Google par request nahi bhejega
+@strl.cache_resource
 def get_ai_client(key):
     if key:
         try:
             return genai.Client(api_key=key)
-        except Exception as e:
-            st.error(f"Client init error: {e}")
+        except Exception:
             return None
     return None
 
 ai_client = get_ai_client(api_key)
 
-# Session State
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = "Jarvis: Systems online. Jarvis AI initialized.\nJarvis: Ready for your command, Sir."
-if "tts_text" not in st.session_state:
-    st.session_state.tts_text = ""
-if "voice_input" not in st.session_state:
-    st.session_state.voice_input = ""
+# Initialize Session States for Logs and Responses
+if "chat_history" not in strl.session_state:
+    strl.session_state.chat_history = "Jarvis: Systems online. Jarvis AI initialized.\nJarvis: Ready for your command, Sir."
+if "tts_text" not in strl.session_state:
+    strl.session_state.tts_text = "Systems initialized with Gemini AI. I am online, Sir."
 
-# ================= CORE PROCESSOR =================
-def process_command(command):
-    if not command or command.strip() == "":
-        return
-        
-    st.session_state.chat_history += f"\n\nYou: {command}"
-    cmd = command.lower().strip()
-    
-    # System Commands
-    if any(word in cmd for word in ["stop", "exit", "bye jarvis", "shutdown"]):
-        reply = "Going offline. Goodbye, Sir. 🖥️"
-        st.session_state.chat_history += f"\n\nJarvis: {reply}"
-        st.session_state.tts_text = reply
-        
-    elif "open google" in cmd:
-        reply = "Opening Google, Sir. 🌐"
-        st.session_state.chat_history += f"\n\nJarvis: {reply}"
-        st.session_state.tts_text = reply
-        st.markdown('<meta http-equiv="refresh" content="0;URL=\'https://www.google.com\'" />', unsafe_allow_html=True)
-        
-    elif "open youtube" in cmd:
-        reply = "Opening YouTube, Sir. 📺"
-        st.session_state.chat_history += f"\n\nJarvis: {reply}"
-        st.session_state.tts_text = reply
-        st.markdown('<meta http-equiv="refresh" content="0;URL=\'https://www.youtube.com\'" />', unsafe_allow_html=True)
-    
-    elif "time" in cmd or "kitna baj" in cmd:
-        now = datetime.now().strftime("%I:%M %p")
-        reply = f"Sir, the current time is {now}. ⏰"
-        st.session_state.chat_history += f"\n\nJarvis: {reply}"
-        st.session_state.tts_text = reply
-
-    elif "date" in cmd or "tareek" in cmd:
-        today = datetime.now().strftime("%d %B %Y")
-        reply = f"Sir, today is {today}. 📅"
-        st.session_state.chat_history += f"\n\nJarvis: {reply}"
-        st.session_state.tts_text = reply
-
-    else:
-        if not ai_client:
-            reply = "Sir, Gemini API Key is missing. Please add it to secrets."
-            st.session_state.chat_history += f"\n\nJarvis: {reply}"
-            st.session_state.tts_text = reply
-        else:
-            try:
-                # 🔥 FIX: Correct model name
-                response = ai_client.models.generate_content(
-                    model='gemini-1.5-flash',  # <--- YAHAN FIX KIYA
-                    contents=command,
-                    config={
-                        'system_instruction': """You are JARVIS, Tony Stark's AI assistant. 
-                        Keep responses short, crisp, and under 2 sentences. 
-                        Use 'Sir' for the user. Be helpful and professional."""
-                    }
-                )
-                reply = response.text.strip()
-                st.session_state.chat_history += f"\n\nJarvis: {reply}"
-                st.session_state.tts_text = reply
-            except Exception as e:
-                error_msg = str(e)
-                if "404" in error_msg or "NOT_FOUND" in error_msg:
-                    reply = "Sir, AI model not found. Please check the model name configuration. 🤖"
-                elif "429" in error_msg:
-                    reply = "Sir, rate limit reached. Please wait 5 seconds. ⏳"
-                elif "API_KEY" in error_msg:
-                    reply = "Sir, invalid API key. Please check your credentials. 🔑"
-                else:
-                    reply = f"Sir, AI core error: {error_msg[:80]}"
-                st.session_state.chat_history += f"\n\nJarvis: {reply}"
-                st.session_state.tts_text = reply
-
-# Status
-status_col1, status_col2 = st.columns([3, 1])
-with status_col1:
-    st.markdown('<div class="terminal-status">🟢 Status: Active | Click Mic or Type Command</div>', unsafe_allow_html=True)
-with status_col2:
-    if ai_client:
-        st.markdown('<div class="terminal-status" style="color:#4af626;">✅ AI Online</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="terminal-status" style="color:#ff4b4b;">❌ API Missing</div>', unsafe_allow_html=True)
-
-# Chat Display
-st.markdown(f'<div class="chat-box">{st.session_state.chat_history}</div>', unsafe_allow_html=True)
-
-# ================= HIDDEN VOICE INPUT =================
-# Isme JS se voice text aayega
-voice_text = st.text_input("hidden_voice", key="voice_input_field", label_visibility="collapsed")
-
-if voice_text and voice_text != "":
-    process_command(voice_text)
-    # Clear karo taaki loop na ho
-    st.session_state.voice_input_field = ""
-    st.rerun()
-
-# ================= JAVASCRIPT: VOICE RECOGNITION + TTS =================
-tts_text = st.session_state.tts_text
-
+# ================= JAVASCRIPT FOR SPEECH & TTS =================
+# Fixed JS with robust SpeechRecognition triggering
 js_code = f"""
 <script>
-// ================= TEXT TO SPEECH (JARVIS BOLTA HAI) =================
-function speakJarvis(text) {{
-    if ('speechSynthesis' in window && text && text !== "") {{
-        window.speechSynthesis.cancel();
-        let utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.9;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-        // Try to find a male voice
-        let voices = window.speechSynthesis.getVoices();
-        let jarvisVoice = voices.find(v => v.name.includes('Male') || v.name.includes('David') || v.name.includes('Google UK'));
-        if (jarvisVoice) utterance.voice = jarvisVoice;
-        window.speechSynthesis.speak(utterance);
-    }}
-}}
-
-// Agar TTS text hai toh bolo
-let ttsText = `{tts_text}`;
-if (ttsText && ttsText !== "") {{
-    setTimeout(() => {{ speakJarvis(ttsText); }}, 300);
-}}
-
-// ================= SPEECH TO TEXT (USER BOLTA HAI) =================
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-if (!SpeechRecognition) {{
-    document.getElementById('mic-btn').innerHTML = '❌ Browser Not Supported';
-    document.getElementById('mic-btn').disabled = true;
-}} else {{
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-IN'; // Hindi+English samjhega
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    const micBtn = document.getElementById('mic-btn');
-    
-    micBtn.addEventListener('click', function() {{
-        try {{
-            recognition.start();
-            this.innerHTML = '⏳ Listening... Speak Now 🎤';
-            this.classList.add('listening');
-        }} catch (e) {{
-            console.log('Error:', e);
-        }}
-    }});
-
-    recognition.onresult = function(event) {{
-        const transcript = event.results[0][0].transcript;
-        console.log('Recognized:', transcript);
-        
-        // Streamlit ke hidden input mein daalo
-        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        let targetInput = null;
-        for (let input of inputs) {{
-            if (input.id && input.id.includes('voice_input_field')) {{
-                targetInput = input;
-                break;
+    // --- TEXT TO SPEECH (Jarvis Voice) ---
+    function speak(text) {{
+        if ('speechSynthesis' in window && text !== "") {{
+            window.speechSynthesis.cancel(); 
+            var msg = new SpeechSynthesisUtterance(text);
+            var voices = window.speechSynthesis.getVoices();
+            if(voices.length > 0) {{
+                msg.voice = voices[0]; 
             }}
+            msg.rate = 1.0;
+            window.speechSynthesis.speak(msg);
+        }}
+    }}
+
+    var current_tts = `{strl.session_state.tts_text}`;
+    if (current_tts !== "") {{
+        speak(current_tts);
+    }}
+
+    function startListening() {{
+        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {{
+            alert("Your browser does not support Speech Recognition. Please use Chrome.");
+            return;
         }}
         
-        if (targetInput) {{
-            targetInput.value = transcript;
-            targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        var recognition = new SpeechRecognition();
+        recognition.lang = 'en-IN';
+        recognition.interimResults = false;
+
+        recognition.start();
+
+        recognition.onresult = function(event) {{
+            var speechToText = event.results[0][0].transcript;
+            // Inject text safely using modern window messaging
+            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: speechToText}}, '*');
             
-            // Enter key press simulate karo
-            const enterEvent = new KeyboardEvent('keydown', {{
-                bubbles: true,
-                cancelable: true,
-                key: 'Enter',
-                keyCode: 13
-            }});
-            targetInput.dispatchEvent(enterEvent);
-        }}
-        
-        micBtn.innerHTML = '🎙️ Click to Speak';
-        micBtn.classList.remove('listening');
-    }};
-
-    recognition.onerror = function(event) {{
-        console.error('Error:', event.error);
-        micBtn.innerHTML = '❌ Error: ' + event.error;
-        micBtn.classList.remove('listening');
-        setTimeout(() => {{
-            micBtn.innerHTML = '🎙️ Click to Speak';
-        }}, 2000);
-    }};
-
-    recognition.onend = function() {{
-        micBtn.innerHTML = '🎙️ Click to Speak';
-        micBtn.classList.remove('listening');
-    }};
-}}
+            // Fallback fallback selector injection
+            const doc = window.parent.document;
+            const textFields = doc.querySelectorAll('textarea[aria-label="voice_input_receiver"]');
+            if(textFields.length > 0) {{
+                textFields[0].value = speechToText;
+                textFields[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+            }}
+        }};
+    }}
 </script>
 """
 
-# ================= MIC BUTTON =================
-st.markdown("""
-    <button id="mic-btn" class="mic-button">
-        🎙️ Click to Speak
-    </button>
-""", unsafe_allow_html=True)
+# Inject JavaScript
+strl.components.v1.html(js_code, height=0, width=0)
 
-# JS inject
-st.components.v1.html(js_code, height=0)
+st_status = strl.empty()
+st_status.markdown('<div class="terminal-status">Status: Standby. Use terminal input below or Initialize Mic</div>', unsafe_allow_html=True)
 
-# ================= MANUAL TEXT INPUT =================
-st.markdown("---")
-st.markdown("### ⌨️ Type Your Command")
+# Display Terminal logs
+strl.markdown(f'<div class="chat-box">{strl.session_state.chat_history}</div>', unsafe_allow_html=True)
 
-with st.form(key="command_form", clear_on_submit=True):
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        text_input = st.text_input("Command:", placeholder="Type here...", label_visibility="collapsed")
-    with col2:
-        submit_button = st.form_submit_button("🚀 Send", use_container_width=True)
+# ================= CORE PROCESSOR =================
+def process_command(command):
+    # Agar command khali hai, ya wahi purani command baar-baar aa rahi hai toh ruk jao
+    if not command or command.strip() == "":
+        return
+        
+    # Pehle hi check karlo ki kya yeh query abhi-abhi process hui hai?
+    if strl.session_state.get("last_processed_query") == command:
+        return
+
+    # Ab save karo ki hum isko process kar rahe hain taaki duplicate requests na jayein
+    strl.session_state.last_processed_query = command
+        
+    strl.session_state.chat_history += f"\n\nYou: {command}"
+    cmd = command.lower().strip()
     
-    if submit_button and text_input:
-        process_command(text_input)
-        st.rerun()
+    # 1. EXIT COMMANDS
+    if "stop" in cmd or "exit" in cmd or "bye jarvis" in cmd:
+        reply = "Going offline. Goodbye, Sir."
+        strl.session_state.chat_history += f"\n\nJarvis: {reply}"
+        strl.session_state.tts_text = reply
+        
+    # 2. OS/BROWSER CAPABILITIES
+    elif "open google" in cmd:
+        reply = "Opening Google, Sir."
+        strl.session_state.chat_history += f"\n\nJarvis: {reply}"
+        strl.session_state.tts_text = reply
+        strl.markdown('<meta http-equiv="refresh" content="0;URL=\'https://www.google.com\'" />', unsafe_allow_html=True)
+        
+    elif "open youtube" in cmd:
+        reply = "Opening YouTube, Sir."
+        strl.session_state.chat_history += f"\n\nJarvis: {reply}"
+        strl.session_state.tts_text = reply
+        strl.markdown('<meta http-equiv="refresh" content="0;URL=\'https://www.youtube.com\'" />', unsafe_allow_html=True)
 
-# ================= FOOTER =================
-st.markdown("""
-    <div style="text-align: center; color: #666; font-size: 12px; margin-top: 20px; font-family: 'Courier New', monospace;">
-        ⚡ JARVIS AI v2.0 | Model: Gemini 1.5 Flash
-    </div>
-""", unsafe_allow_html=True)
+    # 3. GEMINI CORE RESPONSE
+    else:
+        if not ai_client:
+            reply = "Sir, Gemini API Key core component missing configuration."
+            strl.session_state.chat_history += f"\n\nJarvis: {reply}"
+            strl.session_state.tts_text = reply
+        else:
+            try:
+                response = ai_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=command,
+                    config={
+                        'system_instruction': "You are JARVIS, a helpful, ultra-smart AI assistant. Keep responses sweet, clean, smart, and under 2 sentences. Speak like a loyal assistant."
+                    }
+                )
+                reply = response.text.strip()
+                strl.session_state.chat_history += f"\n\nJarvis: {reply}"
+                strl.session_state.tts_text = reply
+            except Exception as e:
+                print(f"Gemini API Error: {e}")
+                # Agar 429 error aaye toh user ko clear batao ki unka code sahi hai, bas server busy hai
+                if "429" in str(e):
+                    reply = "Sir, Streamlit Cloud servers are currently facing high traffic with Gemini API. Please try again in a few seconds."
+                else:
+                    reply = f"Sir, I faced an error connecting to the AI core. Details: {str(e)[:30]}"
+                strl.session_state.chat_history += f"\n\nJarvis: {reply}"
+                strl.session_state.tts_text = "Apologies Sir, server is busy."
+
+# ================= VOICE INPUT RECEIVER & HANDLER =================
+# JavaScript se aane wale voice response ko catch karne ke liye setup
+from streamlit_js_eval import streamlit_js_eval
+
+# Browser ke window messaging se text data retrieve karna
+voice_query = None
+
+# Yeh block check karega ki koi nayi voice query aayi hai ya nahi
+if voice_query and voice_query != strl.session_state.get("last_processed_query", ""):
+    st_status.markdown('<div class="terminal-status">Status: Processing Command...</div>', unsafe_allow_html=True)
+    process_command(voice_query)
+    strl.rerun()
+
+# --- Manual Input Box & Control Action Buttons ---
+col1, col2 = strl.columns([3, 1])
+with col1:
+    text_input = strl.text_input("Type command manually here:", key="manual_text_input", label_visibility="collapsed", placeholder="Type a command...")
+with col2:
+    if strl.button("SEND ↵", use_container_width=True) and text_input:
+        process_command(text_input)
+        strl.rerun()
+
+# Main Interactive Custom Mic Activation Button 
+if strl.button("🎙️ INITIALIZE MIC SYSTEMS", use_container_width=True):
+    strl.markdown('<script>startListening();</script>', unsafe_allow_html=True)
