@@ -2,6 +2,8 @@ import streamlit as strl
 from google import genai
 import json
 import os
+# Nayi library import ki hai browser mic handle karne ke liye
+from streamlit_mic_recorder import speech_to_text
 
 # ================= STREAMLIT PAGE CONFIG =================
 strl.set_page_config(page_title="JARVIS AI ONLINE SYSTEM", page_icon="🤖", layout="centered")
@@ -68,7 +70,8 @@ if "chat_history" not in strl.session_state:
 if "tts_text" not in strl.session_state:
     strl.session_state.tts_text = ""
 
-# ================= JAVASCRIPT FOR SPEECH & TTS =================
+# ================= JAVASCRIPT FOR TTS (Voice Reply) =================
+# Speech recognition wala part ab Python component handle karega, yahan sirf TTS rakha hai
 js_code = f"""
 <script>
     function speak(text) {{
@@ -87,24 +90,6 @@ js_code = f"""
     var current_tts = `{strl.session_state.tts_text}`;
     if (current_tts !== "") {{
         speak(current_tts);
-    }}
-
-    function startListening() {{
-        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {{
-            alert("Your browser does not support Speech Recognition. Please use Chrome.");
-            return;
-        }}
-        
-        var recognition = new SpeechRecognition();
-        recognition.lang = 'en-IN';
-        recognition.interimResults = false;
-        recognition.start();
-
-        recognition.onresult = function(event) {{
-            var speechToText = event.results[0][0].transcript;
-            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: speechToText}}, '*');
-        }};
     }}
 </script>
 """
@@ -167,7 +152,6 @@ def process_command(command):
                 strl.session_state.tts_text = "Apologies Sir, server is busy."
 
 # --- Manual Input Box & Buttons ---
-# Form use karne se Streamlit tab tak refresh nahi karega jab tak button na dabe (No more infinite loops!)
 with strl.form(key="command_form", clear_on_submit=True):
     text_input = strl.text_input("Type command manually here:", placeholder="Type a command and press Enter...")
     submit_button = strl.form_submit_button("SEND COMMAND ↵", use_container_width=True)
@@ -176,6 +160,17 @@ with strl.form(key="command_form", clear_on_submit=True):
         process_command(text_input)
         strl.rerun()
 
-# Mic Button
-if strl.button("🎙️ INITIALIZE MIC SYSTEMS", use_container_width=True):
-    strl.markdown('<script>startListening();</script>', unsafe_allow_html=True)
+# ================= WORKING LIVE MIC BUTTON =================
+# Yeh button ab automatic browser ka mic trigger karega aur data process karega
+voice_text = speech_to_text(
+    start_prompt="🎙️ INITIALIZE MIC SYSTEMS",
+    stop_prompt="🛑 LISTENING... CLICK TO STOP",
+    language='en-IN', # Hindi/English mix samajhne ke liye
+    use_container_width=True,
+    key='jarvis_mic'
+)
+
+# Agar mic se koi awaaz aayi aur text convert hua, toh use turant process karo
+if voice_text:
+    process_command(voice_text)
+    strl.rerun()
