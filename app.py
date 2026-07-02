@@ -2,8 +2,6 @@ import streamlit as strl
 from google import genai
 import json
 import os
-# Nayi library import ki hai browser mic handle karne ke liye
-from streamlit_mic_recorder import speech_to_text
 
 # ================= STREAMLIT PAGE CONFIG =================
 strl.set_page_config(page_title="JARVIS AI ONLINE SYSTEM", page_icon="🤖", layout="centered")
@@ -41,6 +39,10 @@ strl.markdown("""
         margin-bottom: 20px;
         white-space: pre-wrap;
     }
+    /* Hidden bridge component style */
+    div[data-testid="stMarkdownContainer"] > iframe {
+        display: none;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -69,37 +71,6 @@ if "chat_history" not in strl.session_state:
     strl.session_state.chat_history = "Jarvis: Systems online. Jarvis AI initialized.\nJarvis: Ready for your command, Sir."
 if "tts_text" not in strl.session_state:
     strl.session_state.tts_text = ""
-
-# ================= JAVASCRIPT FOR TTS (Voice Reply) =================
-# Speech recognition wala part ab Python component handle karega, yahan sirf TTS rakha hai
-js_code = f"""
-<script>
-    function speak(text) {{
-        if ('speechSynthesis' in window && text !== "") {{
-            window.speechSynthesis.cancel(); 
-            var msg = new SpeechSynthesisUtterance(text);
-            var voices = window.speechSynthesis.getVoices();
-            if(voices.length > 0) {{
-                msg.voice = voices[0]; 
-            }}
-            msg.rate = 1.0;
-            window.speechSynthesis.speak(msg);
-        }}
-    }}
-
-    var current_tts = `{strl.session_state.tts_text}`;
-    if (current_tts !== "") {{
-        speak(current_tts);
-    }}
-</script>
-"""
-strl.components.v1.html(js_code, height=0, width=0)
-
-st_status = strl.empty()
-st_status.markdown('<div class="terminal-status">Status: Standby. Use terminal input below or Initialize Mic</div>', unsafe_allow_html=True)
-
-# Display Terminal logs
-strl.markdown(f'<div class="chat-box">{strl.session_state.chat_history}</div>', unsafe_allow_html=True)
 
 # ================= CORE PROCESSOR =================
 def process_command(command):
@@ -151,7 +122,127 @@ def process_command(command):
                 strl.session_state.chat_history += f"\n\nJarvis: {reply}"
                 strl.session_state.tts_text = "Apologies Sir, server is busy."
 
-# --- Manual Input Box & Buttons ---
+# Status Bar
+st_status = strl.empty()
+st_status.markdown('<div class="terminal-status">Status: Standby. Use terminal input below or Initialize Mic</div>', unsafe_allow_html=True)
+
+# Display Terminal logs
+strl.markdown(f'<div class="chat-box">{strl.session_state.chat_history}</div>', unsafe_allow_html=True)
+
+# ================= HIDDEN VOICE INPUT BRIDGE =================
+# Yeh invisible input box pure page par JavaScript ka bola hua data receive karega
+voice_bridge_text = strl.text_input("Voice Input Catch", key="hidden_voice_bridge", label_visibility="collapsed")
+
+if voice_bridge_text:
+    # Jaise hi JS se data isme aayega, hum isko process karenge aur box khali kar denge
+    process_command(voice_bridge_text)
+    # Clear input state manually to avoid looping
+    strl.empty()
+    strl.rerun()
+
+# ================= JAVASCRIPT & CUSTOM MIC BUTTON =================
+js_and_html = f"""
+<div style="margin-bottom: 10px;">
+    <button id="mic-btn" style="
+        width: 100%; 
+        padding: 14px; 
+        border-radius: 8px; 
+        border: 1px solid #ffffff; 
+        background-color: #ffffff; 
+        color: #000000; 
+        font-weight: bold; 
+        cursor: pointer;
+        font-size: 16px;
+        text-align: center;
+        font-family: 'Courier New', Courier, monospace;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
+        transition: 0.3s;">
+        🎙️ INITIALIZE MIC SYSTEMS
+    </button>
+</div>
+
+<script>
+    // --- TEXT TO SPEECH (Jarvis Voice Reply) ---
+    function speak(text) {{
+        if ('speechSynthesis' in window && text !== "") {{
+            window.speechSynthesis.cancel(); 
+            var msg = new SpeechSynthesisUtterance(text);
+            var voices = window.speechSynthesis.getVoices();
+            if(voices.length > 0) {{
+                msg.voice = voices[0]; 
+            }}
+            msg.rate = 1.0;
+            window.speechSynthesis.speak(msg);
+        }}
+    }}
+
+    var current_tts = `{strl.session_state.tts_text}`;
+    if (current_tts !== "") {{
+        speak(current_tts);
+    }}
+
+    // --- SPEECH RECOGNITION (Live Mic System) ---
+    const button = document.getElementById('mic-btn');
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {{
+        button.innerText = "❌ Browser Mic Not Supported";
+        button.style.backgroundColor = "#ff4b4b";
+        button.style.color = "white";
+    }} else {{
+        var recognition = new SpeechRecognition();
+        recognition.lang = 'en-IN'; // Mix English-Hindi language support
+        recognition.interimResults = false;
+        
+        button.addEventListener('click', () => {{
+            button.innerText = "⏳ LISTENING CORE ACTIVE...";
+            button.style.backgroundColor = "#4af626";
+            button.style.color = "black";
+            recognition.start();
+        }});
+        
+        recognition.onresult = function(event) {{
+            var speechToText = event.results[0][0].transcript;
+            
+            button.innerText = "🎙️ INITIALIZE MIC SYSTEMS";
+            button.style.backgroundColor = "#ffffff";
+            button.style.color = "#000000";
+            
+            // Streamlit ke hidden input box ko dhund kar usme text daalna aur submit trigger karna
+            var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            if (inputs.length > 0) {{
+                // Pehla hidden box jo humne upar banaya h use target karega
+                var targetInput = inputs[0]; 
+                targetInput.value = speechToText;
+                
+                // Streamlit ko batane ke liye ki input change ho gaya h
+                targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                
+                // Submit logic automatically trigger karne ke liye enter stroke simulate karna
+                var ke = new KeyboardEvent('keydown', {{ bubbles: true, cancelable: true, keyCode: 13, key: 'Enter' }});
+                targetInput.dispatchEvent(ke);
+            }}
+        }};
+        
+        recognition.onerror = function() {{
+            button.innerText = "❌ MIC ERROR! TRY AGAIN";
+            button.style.backgroundColor = "#ff4b4b";
+            button.style.color = "white";
+            setTimeout(() => {{
+                button.innerText = "🎙️ INITIALIZE MIC SYSTEMS";
+                button.style.backgroundColor = "#ffffff";
+                button.style.color = "#000000";
+            }}, 2000);
+        }};
+    }}
+</script>
+"""
+
+# HTML block inject karna button display karne ke liye
+strl.components.v1.html(js_and_html, height=65)
+
+# ================= MANUAL TEXT INPUT FORM =================
 with strl.form(key="command_form", clear_on_submit=True):
     text_input = strl.text_input("Type command manually here:", placeholder="Type a command and press Enter...")
     submit_button = strl.form_submit_button("SEND COMMAND ↵", use_container_width=True)
@@ -159,18 +250,3 @@ with strl.form(key="command_form", clear_on_submit=True):
     if submit_button and text_input:
         process_command(text_input)
         strl.rerun()
-
-# ================= WORKING LIVE MIC BUTTON =================
-# Yeh button ab automatic browser ka mic trigger karega aur data process karega
-voice_text = speech_to_text(
-    start_prompt="🎙️ INITIALIZE MIC SYSTEMS",
-    stop_prompt="🛑 LISTENING... CLICK TO STOP",
-    language='en-IN', # Hindi/English mix samajhne ke liye
-    use_container_width=True,
-    key='jarvis_mic'
-)
-
-# Agar mic se koi awaaz aayi aur text convert hua, toh use turant process karo
-if voice_text:
-    process_command(voice_text)
-    strl.rerun()
