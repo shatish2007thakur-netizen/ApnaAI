@@ -39,10 +39,6 @@ strl.markdown("""
         margin-bottom: 20px;
         white-space: pre-wrap;
     }
-    /* Hidden element hack for JS communication */
-    div[data-testid="stTextInput"] {
-        color: white;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -53,7 +49,7 @@ strl.markdown('<div class="terminal-title">JARVIS AI ONLINE SYSTEM</div>', unsaf
 if "GEMINI_API_KEY" in strl.secrets:
     api_key = strl.secrets["GEMINI_API_KEY"]
 else:
-    api_key = None
+    api_key = os.environ.get("GEMINI_API_KEY", None)
 
 @strl.cache_resource
 def get_ai_client(key):
@@ -92,7 +88,7 @@ def process_command(command):
         strl.session_state.chat_history += f"\n\nJarvis: {reply}"
         strl.session_state.tts_text = reply
         
-    # 2. OS/BROWSER CAPABILITIES
+    # 2. BROWSER CAPABILITIES
     elif "open google" in cmd:
         reply = "Opening Google, Sir."
         strl.session_state.chat_history += f"\n\nJarvis: {reply}"
@@ -105,7 +101,7 @@ def process_command(command):
         strl.session_state.tts_text = reply
         strl.markdown('<meta http-equiv="refresh" content="0;URL=\'https://www.youtube.com\'" />', unsafe_allow_html=True)
 
-    # 3. GEMINI CORE RESPONSE
+    # 3. ASSISTANT QUERY MODE (GEMINI CORE)
     else:
         if not ai_client:
             reply = "Sir, Gemini API Key core component missing configuration."
@@ -113,11 +109,12 @@ def process_command(command):
             strl.session_state.tts_text = reply
         else:
             try:
+                # model modified to gemini-2.5-flash for faster response
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=command,
                     config={
-                        'system_instruction': "You are JARVIS, a helpful, ultra-smart AI assistant. Keep responses sweet, clean, smart, and under 2 sentences. Speak like a loyal assistant."
+                        'system_instruction': "You are JARVIS, an ultra-smart, supportive, and advanced AI assistant. Answer the query correctly and naturally like a helpful intelligence system."
                     }
                 )
                 reply = response.text.strip()
@@ -125,14 +122,13 @@ def process_command(command):
                 strl.session_state.tts_text = reply
             except Exception as e:
                 if "429" in str(e):
-                    reply = "Sir, Streamlit Cloud servers are currently facing high traffic with Gemini API. Please try again in a few seconds."
+                    reply = "Sir, Streamlit Cloud servers are facing high traffic. Please retry in a moment."
                 else:
-                    reply = f"Sir, I faced an error connecting to the AI core. Details: {str(e)[:30]}"
+                    reply = f"Sir, I faced an error connecting to the AI core."
                 strl.session_state.chat_history += f"\n\nJarvis: {reply}"
-                strl.session_state.tts_text = "Apologies Sir, server is busy."
+                strl.session_state.tts_text = "Server busy, Sir."
 
-# ================= JAVASCRIPT FOR SPEECH & TTS =================
-# We integrate this smoothly directly inside the app body
+# ================= JAVASCRIPT INTEGRATION =================
 js_code = f"""
 <script>
     function speak(text) {{
@@ -148,7 +144,6 @@ js_code = f"""
         }}
     }}
 
-    // Trigger TTS on load
     var current_tts = `{strl.session_state.tts_text}`;
     if (current_tts !== "") {{
         speak(current_tts);
@@ -169,13 +164,13 @@ js_code = f"""
         recognition.onresult = function(event) {{
             var speechToText = event.results[0][0].transcript;
             
-            // Find standard Streamlit inputs via parent window securely
+            // Find Streamlit input fields automatically
             var inputs = window.parent.document.querySelectorAll('input[type="text"]');
             if(inputs.length > 0) {{
                 inputs[0].value = speechToText;
                 inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
                 
-                // Simulate pressing Enter key
+                // Automatic press and trigger simulation
                 setTimeout(function() {{
                     inputs[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
                     var buttons = window.parent.document.querySelectorAll('button');
@@ -193,26 +188,24 @@ js_code = f"""
 """
 strl.components.v1.html(js_code, height=0, width=0)
 
-# Display Status and Logs
+# Render logs on layout
 st_status = strl.empty()
 st_status.markdown('<div class="terminal-status">Status: Standby. Use terminal input below or Initialize Mic</div>', unsafe_allow_html=True)
 strl.markdown(f'<div class="chat-box">{strl.session_state.chat_history}</div>', unsafe_allow_html=True)
 
-# --- Manual & Voice Combined Input Box ---
-col1, col2 = strl.columns([3, 1])
-with col1:
-    # Is input widget ko JS direct query inject karne ke liye use karega
-    text_input = strl.text_input("Type command manually here:", key="manual_text_input", label_visibility="collapsed", placeholder="Type or speak a command...")
-with col2:
-    send_click = strl.button("SEND ↵", use_container_width=True)
+# --- Manual & Voice Input Section ---
+text_input = strl.text_input("Type command manually here:", key="manual_text_input", label_visibility="collapsed", placeholder="Type a command and press Enter...")
 
-# Trigger Processor if text submitted
-if (text_input and text_input != strl.session_state.last_processed_query) or (send_click and text_input):
-    st_status.markdown('<div class="terminal-status">Status: Processing Command...</div>', unsafe_allow_html=True)
+if strl.button("SEND COMMAND ↵", use_container_width=True):
+    if text_input:
+        process_command(text_input)
+        strl.rerun()
+
+# Check if enter key triggered direct execution without button click
+if text_input and text_input != strl.session_state.last_processed_query:
     process_command(text_input)
     strl.rerun()
 
-# Main Interactive Custom Mic Activation Button 
+# Main Mic Activation Button
 if strl.button("🎙️ INITIALIZE MIC SYSTEMS", use_container_width=True):
-    # This invokes the JS speech trigger built on parent window level
     strl.components.v1.html(js_code + "<script>startListening();</script>", height=0, width=0)
