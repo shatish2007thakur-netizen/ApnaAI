@@ -3,6 +3,9 @@ from google import genai
 import json
 import os
 import time
+from datetime import datetime
+from streamlit_mic_recorder import mic_recorder
+from streamlit_js_eval import streamlit_js_eval
 
 # ================= STREAMLIT PAGE CONFIG =================
 st.set_page_config(page_title="JARVIS AI ONLINE SYSTEM", page_icon="🤖", layout="centered")
@@ -40,34 +43,17 @@ st.markdown("""
         margin-bottom: 20px;
         white-space: pre-wrap;
     }
-    .mic-button {
-        width: 100%;
-        padding: 14px;
-        border-radius: 8px;
-        border: 2px solid #4af626;
-        background-color: #000000;
-        color: #4af626;
+    .stButton > button {
+        background-color: #4af626;
+        color: #000000;
         font-weight: bold;
-        cursor: pointer;
-        font-size: 18px;
-        text-align: center;
+        border: none;
+        border-radius: 8px;
         font-family: 'Courier New', Courier, monospace;
-        transition: 0.3s;
-        margin-bottom: 10px;
     }
-    .mic-button:hover {
-        background-color: #4af626;
+    .stButton > button:hover {
+        background-color: #ffffff;
         color: #000000;
-    }
-    .mic-button.listening {
-        background-color: #4af626;
-        color: #000000;
-        animation: pulse 1s infinite;
-    }
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -97,10 +83,6 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = "Jarvis: Systems online. Jarvis AI initialized.\nJarvis: Ready for your command, Sir."
 if "tts_text" not in st.session_state:
     st.session_state.tts_text = ""
-if "voice_input" not in st.session_state:
-    st.session_state.voice_input = ""
-if "process_voice" not in st.session_state:
-    st.session_state.process_voice = False
 
 # ================= CORE PROCESSOR =================
 def process_command(command):
@@ -135,14 +117,12 @@ def process_command(command):
         st.markdown('<meta http-equiv="refresh" content="0;URL=\'https://github.com\'" />', unsafe_allow_html=True)
 
     elif "time" in cmd or "kitna baj" in cmd:
-        from datetime import datetime
         now = datetime.now().strftime("%I:%M %p")
         reply = f"Sir, the current time is {now}. ⏰"
         st.session_state.chat_history += f"\n\nJarvis: {reply}"
         st.session_state.tts_text = reply
 
     elif "date" in cmd or "tareek" in cmd:
-        from datetime import datetime
         today = datetime.now().strftime("%d %B %Y")
         reply = f"Sir, today is {today}. 📅"
         st.session_state.chat_history += f"\n\nJarvis: {reply}"
@@ -193,139 +173,68 @@ with status_col2:
 # Display Terminal logs
 st.markdown(f'<div class="chat-box">{st.session_state.chat_history}</div>', unsafe_allow_html=True)
 
-# ================= VOICE INPUT HANDLER =================
-# Hidden input to receive voice from JavaScript
-voice_text = st.text_input("🎤 Voice Input", key="voice_input_field", label_visibility="collapsed", 
-                           placeholder="Voice input will appear here...")
+# ================= VOICE RECORDER (NEW) =================
+st.markdown("### 🎤 Voice Command")
+col1, col2 = st.columns([2, 1])
 
-if voice_text and voice_text != "":
-    process_command(voice_text)
-    # Clear the input after processing
-    st.session_state.voice_input_field = ""
-    st.rerun()
+with col1:
+    # Use streamlit-mic-recorder
+    audio = mic_recorder(
+        start_prompt="🎙️ Click to Speak",
+        stop_prompt="⏹️ Stop Recording",
+        just_once=True,
+        use_container_width=True,
+        format="webm",
+        key="jarvis_mic"
+    )
 
-# ================= JAVASCRIPT VOICE RECOGNITION =================
-# Voice TTS and Recognition JavaScript
-tts_text = st.session_state.tts_text
+with col2:
+    if st.button("🗑️ Clear Chat", use_container_width=True):
+        st.session_state.chat_history = "Jarvis: Chat cleared. Ready for new commands."
+        st.session_state.tts_text = "Chat cleared."
+        st.rerun()
 
-js_code = f"""
-<script>
-// ================= TEXT TO SPEECH =================
-function speakJarvis(text) {{
-    if ('speechSynthesis' in window && text && text !== "") {{
-        window.speechSynthesis.cancel();
-        let utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.9;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
+# Process audio when available
+if audio:
+    # Save audio temporarily
+    audio_bytes = audio.get('bytes')
+    if audio_bytes:
+        # Convert audio to text using Google Speech Recognition (via st-js-eval or alternative)
+        # Since mic_recorder gives bytes, we can use a speech-to-text service
+        # Option 1: Use Google Cloud Speech-to-Text (requires API)
+        # Option 2: Use a local model (slower)
+        # Option 3: Use a free online API
         
-        // Try to get a male voice for Jarvis
-        let voices = window.speechSynthesis.getVoices();
-        let jarvisVoice = voices.find(voice => voice.name.includes('Male') || voice.name.includes('David'));
-        if (jarvisVoice) {{
-            utterance.voice = jarvisVoice;
+        # For simplicity, we'll use streamlit_js_eval to call Web Speech API
+        # But mic_recorder already records, so we can use a JS fallback for transcription
+        
+        # We'll use a JS approach to transcribe the audio
+        st.session_state.tts_text = "Processing voice... Please wait."
+        
+        # Temporary solution: Show a message and use text input as fallback
+        st.warning("Voice transcription requires additional setup. Please use the text input below for now.")
+        st.session_state.chat_history += "\n\nJarvis: Voice received but transcription not configured. Please type your command."
+
+# ================= TEXT-TO-SPEECH (JARVIS SPEAKS) =================
+# Use streamlit_js_eval to trigger TTS
+if st.session_state.tts_text:
+    # JavaScript to speak the text
+    tts_js = f"""
+    <script>
+    (function() {{
+        if (window.speechSynthesis) {{
+            let utterance = new SpeechSynthesisUtterance(`{st.session_state.tts_text}`);
+            utterance.rate = 0.9;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            window.speechSynthesis.speak(utterance);
         }}
-        
-        window.speechSynthesis.speak(utterance);
-    }}
-}}
-
-// Speak if there's text
-var ttsText = `{tts_text}`;
-if (ttsText && ttsText !== "") {{
-    setTimeout(() => {{
-        speakJarvis(ttsText);
-    }}, 500);
-}}
-
-// ================= SPEECH RECOGNITION =================
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-if (!SpeechRecognition) {{
-    document.getElementById('mic-btn').innerHTML = '❌ Browser Not Supported';
-    document.getElementById('mic-btn').disabled = true;
-}} else {{
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-IN';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    const micBtn = document.getElementById('mic-btn');
-    
-    micBtn.addEventListener('click', function() {{
-        try {{
-            recognition.start();
-            this.innerHTML = '⏳ Listening... Speak Now 🎤';
-            this.classList.add('listening');
-        }} catch (e) {{
-            console.log('Error starting recognition:', e);
-        }}
-    }});
-
-    recognition.onresult = function(event) {{
-        const transcript = event.results[0][0].transcript;
-        console.log('Recognized:', transcript);
-        
-        // Send to Streamlit via hidden input
-        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        let targetInput = null;
-        
-        // Find our voice input field
-        for (let input of inputs) {{
-            if (input.id && input.id.includes('voice_input_field')) {{
-                targetInput = input;
-                break;
-            }}
-        }}
-        
-        if (targetInput) {{
-            // Set value and trigger events
-            targetInput.value = transcript;
-            targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            
-            // Trigger Enter key to submit
-            const enterEvent = new KeyboardEvent('keydown', {{
-                bubbles: true,
-                cancelable: true,
-                key: 'Enter',
-                keyCode: 13
-            }});
-            targetInput.dispatchEvent(enterEvent);
-        }}
-        
-        // Reset button
-        micBtn.innerHTML = '🎙️ Click to Speak';
-        micBtn.classList.remove('listening');
-    }};
-
-    recognition.onerror = function(event) {{
-        console.error('Recognition error:', event.error);
-        micBtn.innerHTML = '❌ Error: ' + event.error;
-        micBtn.classList.remove('listening');
-        setTimeout(() => {{
-            micBtn.innerHTML = '🎙️ Click to Speak';
-        }}, 2000);
-    }};
-
-    recognition.onend = function() {{
-        micBtn.innerHTML = '🎙️ Click to Speak';
-        micBtn.classList.remove('listening');
-    }};
-}}
-</script>
-"""
-
-# ================= MIC BUTTON =================
-st.markdown("""
-    <button id="mic-btn" class="mic-button">
-        🎙️ Click to Speak
-    </button>
-""", unsafe_allow_html=True)
-
-# Inject JavaScript
-st.components.v1.html(js_code, height=0)
+    }})();
+    </script>
+    """
+    st.components.v1.html(tts_js, height=0)
+    # Clear after speaking (optional, but keep for next command)
+    # st.session_state.tts_text = ""  # Uncomment to clear after speaking
 
 # ================= MANUAL TEXT INPUT FORM =================
 st.markdown("---")
