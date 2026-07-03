@@ -101,7 +101,7 @@ def process_command(command):
         strl.session_state.tts_text = reply
         strl.markdown('<meta http-equiv="refresh" content="0;URL=\'https://www.youtube.com\'" />', unsafe_allow_html=True)
 
-    # 3. ASSISTANT QUERY MODE (GEMINI CORE)
+    # 3. GEMINI RESPONSE MODE
     else:
         if not ai_client:
             reply = "Sir, Gemini API Key core component missing configuration."
@@ -109,12 +109,11 @@ def process_command(command):
             strl.session_state.tts_text = reply
         else:
             try:
-                # model modified to gemini-2.5-flash for faster response
                 response = ai_client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=command,
                     config={
-                        'system_instruction': "You are JARVIS, an ultra-smart, supportive, and advanced AI assistant. Answer the query correctly and naturally like a helpful intelligence system."
+                        'system_instruction': "You are JARVIS, an ultra-smart and highly loyal AI assistant. Provide helpful, accurate, and direct responses to the user's commands."
                     }
                 )
                 reply = response.text.strip()
@@ -122,11 +121,11 @@ def process_command(command):
                 strl.session_state.tts_text = reply
             except Exception as e:
                 if "429" in str(e):
-                    reply = "Sir, Streamlit Cloud servers are facing high traffic. Please retry in a moment."
+                    reply = "Sir, Streamlit Cloud servers are currently facing high traffic. Please try again in a few seconds."
                 else:
                     reply = f"Sir, I faced an error connecting to the AI core."
                 strl.session_state.chat_history += f"\n\nJarvis: {reply}"
-                strl.session_state.tts_text = "Server busy, Sir."
+                strl.session_state.tts_text = "Apologies Sir, server is busy."
 
 # ================= JAVASCRIPT INTEGRATION =================
 js_code = f"""
@@ -164,18 +163,17 @@ js_code = f"""
         recognition.onresult = function(event) {{
             var speechToText = event.results[0][0].transcript;
             
-            // Find Streamlit input fields automatically
+            // Modern direct extraction mapping
             var inputs = window.parent.document.querySelectorAll('input[type="text"]');
             if(inputs.length > 0) {{
                 inputs[0].value = speechToText;
                 inputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
                 
-                // Automatic press and trigger simulation
                 setTimeout(function() {{
                     inputs[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
                     var buttons = window.parent.document.querySelectorAll('button');
                     for (var i = 0; i < buttons.length; i++) {{
-                        if (buttons[i].textContent.includes("SEND")) {{
+                        if (buttons[i].textContent.includes("SEND COMMAND")) {{
                             buttons[i].click();
                             break;
                         }}
@@ -188,12 +186,12 @@ js_code = f"""
 """
 strl.components.v1.html(js_code, height=0, width=0)
 
-# Render logs on layout
+# Render Terminal UI elements
 st_status = strl.empty()
 st_status.markdown('<div class="terminal-status">Status: Standby. Use terminal input below or Initialize Mic</div>', unsafe_allow_html=True)
 strl.markdown(f'<div class="chat-box">{strl.session_state.chat_history}</div>', unsafe_allow_html=True)
 
-# --- Manual & Voice Input Section ---
+# --- Manual & Voice Input Box ---
 text_input = strl.text_input("Type command manually here:", key="manual_text_input", label_visibility="collapsed", placeholder="Type a command and press Enter...")
 
 if strl.button("SEND COMMAND ↵", use_container_width=True):
@@ -201,11 +199,11 @@ if strl.button("SEND COMMAND ↵", use_container_width=True):
         process_command(text_input)
         strl.rerun()
 
-# Check if enter key triggered direct execution without button click
+# Instant processing handler for manual/voice trigger syncs
 if text_input and text_input != strl.session_state.last_processed_query:
     process_command(text_input)
     strl.rerun()
 
-# Main Mic Activation Button
+# Main Custom Mic Button
 if strl.button("🎙️ INITIALIZE MIC SYSTEMS", use_container_width=True):
     strl.components.v1.html(js_code + "<script>startListening();</script>", height=0, width=0)
